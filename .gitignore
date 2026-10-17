@@ -5,3 +5,14 @@ dist/
 Thumbs.db
 *.log
 .archify/
+
+# Unreal Engine
+unreal/**/Binaries/
+unreal/**/Build/
+unreal/**/DerivedDataCache/
+unreal/**/Intermediate/
+unreal/**/Saved/
+unreal/**/.vs/
+unreal/**/*.xcworkspace/
+unreal/**/*.sln
+Build/

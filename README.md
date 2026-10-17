@@ -64,6 +64,17 @@ tested — see `docs/BUILD.md` for turning the loopback into a real socket.
 - no bogus step refusals
 - tampering with client state is detected **and** reverted
 
+## Unreal Engine 5 version
+
+`unreal/OfflineRacer/` is the same game as a C++-only UE5 project, with the
+same architecture. Most of the netcode written by hand here is engine-provided
+there: `UCharacterMovementComponent` does the prediction, `AORGameMode` is the
+race session, and the slide rides on the predicted crouch system so the engine
+refuses to stand you up inside a low tunnel.
+
+It has **not been compiled yet** — see `docs/UNREAL.md` for the build steps on
+macOS and Windows, how to lay out a test track, and the known gaps.
+
 ## Layout
 
 ```
@@ -75,6 +86,7 @@ src/main.js     wiring and the tick order
 tools/          static server, syntax check
 tests/          headless simulation test
 docs/           build & macOS instructions, architecture diagram
+unreal/         UE5 C++ project (same architecture, native)
 ```
 
 `docs/architecture.html` is an interactive diagram of the whole system.
