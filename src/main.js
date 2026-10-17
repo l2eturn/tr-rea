@@ -29,30 +29,87 @@ var R = window.R = window.R || {};
     ghost: R.Ghost(),
     checkpoints: R.Checkpoints(track),
     saved: R.Save.read(),
-    finishHandled: false
+    finishHandled: false,
+    practice: R.Practice(),
+    showInputs: true,
+    rewindDirty: false     // true once a rewind has tainted this run
   };
 
-  function newRace() {
+  function newRace(segmentSector) {
+    var sector = segmentSector || 0;
+
     g.tick = 0;
     g.finishHandled = false;
+    g.rewindDirty = false;
     g.server = R.LocalServer(track, {
       mode: 'time-trial',
       latencyTicks: LATENCIES[g.latencyIndex]
     });
     g.net = R.NetClient(g.server.channel, track);
     g.racerCount = g.server.room.slots.length;
-    g.trial.reset(g.saved);
-    g.ghost.reset(g.saved.ghost);
+
+    g.practice.reset();
+    g.practice.setSegment(sector);
+
+    g.trial.reset(g.saved, sector > 0);
+    g.ghost.reset(sector > 0 ? null : g.saved.ghost);
     g.checkpoints.reset();
+    g.checkpoints.setSector(sector);
+  }
+
+  // Segment practice: skip the countdown and drop everyone at a checkpoint.
+  function beginSegment(sector) {
+    newRace(sector);
+    g.net.pumpDown(g.tick);           // take the welcome so we have a local racer
+    g.server.startAtCheckpoint(sector);
+
+    // The teleport is authoritative; adopting it keeps the client from
+    // claiming the spawn position it still believes in.
+    g.net.adoptAuthoritative(g.server.session.state.get(g.net.state.youId));
+  }
+
+  function doRewind(seconds) {
+    if (!g.server || !g.net.state.local) return;
+
+    var snap = g.practice.rewind(seconds, g.server.session);
+    if (!snap) return;
+
+    // The server moved back, so the client must drop every pending input and
+    // adopt the restored authoritative state outright.
+    var you = g.server.session.state.get(g.net.state.youId);
+    g.net.adoptAuthoritative(you);
+
+    g.tick = snap.tick + 1;
+    g.finishHandled = false;
+    g.rewindDirty = true;
+
+    var frame = snap.startTick >= 0 ? snap.tick - snap.startTick : -1;
+    g.checkpoints.setSector(you ? you.sector : 0);
+    g.trial.truncateTo(you ? you.sector : 0);
+    g.ghost.truncate(frame);
   }
 
   function handleHotkeys() {
-    if (R.Input.pressed('KeyR')) { newRace(); return; }
+    if (R.Input.pressed('KeyR')) { newRace(g.practice.getSegment()); return; }
     if (R.Input.pressed('KeyG')) g.ghostOn = !g.ghostOn;
+    if (R.Input.pressed('KeyT')) g.showInputs = !g.showInputs;
     if (R.Input.pressed('KeyL')) {
       g.latencyIndex = (g.latencyIndex + 1) % LATENCIES.length;
-      newRace();
+      newRace(g.practice.getSegment());
       return;
+    }
+
+    // Rewind a couple of seconds and retry the bit you just fluffed.
+    if (R.Input.pressed('KeyQ')) { doRewind(2); return; }
+
+    // Digit keys pick the segment: 1 = full run, 2..4 = from a checkpoint.
+    var SEGMENT_KEYS = ['Digit1', 'Digit2', 'Digit3', 'Digit4'];
+    for (var si = 0; si < SEGMENT_KEYS.length; si++) {
+      if (R.Input.pressed(SEGMENT_KEYS[si])) {
+        if (si === 0) newRace(0);
+        else beginSegment(si);
+        return;
+      }
     }
     // Client-side tampering. The server owns the real position, so the next
     // snapshot pulls it straight back and the mismatch is counted.
@@ -62,7 +119,8 @@ var R = window.R = window.R || {};
 
   function onFinish() {
     var isBest = g.trial.onFinish();
-    if (!isBest) return;
+    // A rewound run is practice, not a clean lap, so it never sets a record.
+    if (!isBest || g.rewindDirty) return;
 
     g.saved.bestTicks = g.trial.state.finishFrame;
     g.saved.bestSplits = g.trial.state.splits.slice();
@@ -84,7 +142,10 @@ var R = window.R = window.R || {};
     // 4. the authority decides
     g.server.tick(g.tick);
 
-    // 5. client race systems read authoritative state only
+    // 5. snapshot the authority so a rewind has somewhere to go back to
+    g.practice.record(g.tick, g.server.session, input);
+
+    // 6. client race systems read authoritative state only
     var s = g.net.state;
     var authoritative = s.racers[s.youId];
 

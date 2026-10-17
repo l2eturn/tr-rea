@@ -268,6 +268,78 @@ R.Renderer = function (canvas) {
     }
   }
 
+  // Frame-accurate input record. This is the thing that actually makes you
+  // faster: it shows how many frames early or late each press landed.
+  function drawInputDisplay(g) {
+    var hist = g.practice.getInputs();
+    if (hist.length === 0) return;
+
+    var ROWS = [
+      { bit: R.IN.LEFT, label: '\u2190', color: '#94a3b8' },
+      { bit: R.IN.RIGHT, label: '\u2192', color: '#38bdf8' },
+      { bit: R.IN.JUMP, label: 'JMP', color: '#4ade80' },
+      { bit: R.IN.SLIDE, label: 'SLD', color: '#fbbf24' }
+    ];
+
+    var cell = 3, gap = 1, rowH = 11;
+    var shown = Math.min(hist.length, 90);
+    var w = shown * (cell + gap) + 54;
+    var h = ROWS.length * rowH + 30;
+    var x = (W - w) / 2, y = H - h - 16;
+
+    panel(x, y, w, h);
+
+    ctx.font = '8px ui-monospace, monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('INPUT  (' + shown + ' frames)', x + 10, y + 12);
+
+    for (var r = 0; r < ROWS.length; r++) {
+      var row = ROWS[r];
+      var ry = y + 20 + r * rowH;
+
+      ctx.fillStyle = '#475569';
+      ctx.font = '8px ui-monospace, monospace';
+      ctx.fillText(row.label, x + 10, ry + 7);
+
+      for (var i = 0; i < shown; i++) {
+        var entry = hist[hist.length - shown + i];
+        var on = (entry.input & row.bit) !== 0;
+        ctx.fillStyle = on ? row.color : 'rgba(148,163,184,0.14)';
+        ctx.fillRect(x + 42 + i * (cell + gap), ry + 1, cell, 7);
+      }
+
+      // Held duration in frames, which is what you compare between attempts.
+      var held = g.practice.heldTicks(row.bit);
+      if (held > 0) {
+        ctx.fillStyle = row.color;
+        ctx.textAlign = 'right';
+        ctx.fillText(String(held), x + w - 8, ry + 7);
+        ctx.textAlign = 'left';
+      }
+    }
+  }
+
+  function drawPracticeHud(g) {
+    var seg = g.practice.getSegment();
+    var rewinds = g.practice.getRewinds();
+    if (seg === 0 && rewinds === 0 && !g.rewindDirty) return;
+
+    var x = W / 2 - 110, y = 36, w = 220, h = 30;
+    panel(x, y, w, h);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.fillStyle = '#fbbf24';
+
+    var label = seg > 0 ? ('SEGMENT ' + seg + ' \u2014 PRACTICE') : 'PRACTICE RUN';
+    ctx.fillText(label, W / 2, y + 13);
+
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillText('rewinds: ' + rewinds + '  \u00b7  no record set', W / 2, y + 25);
+    ctx.textAlign = 'left';
+  }
+
   function drawHud(g) {
     var s = g.net.state;
     var trial = g.trial.state;
@@ -346,11 +418,12 @@ R.Renderer = function (canvas) {
     ctx.fillText('reconciles ' + s.corrections, px + 14, py + 80);
 
     // --- controls -------------------------------------------------------
-    panel(16, H - 104, 300, 88);
+    panel(16, H - 104, 310, 88);
     ctx.fillStyle = '#94a3b8';
     ctx.font = '10px system-ui, sans-serif';
     ctx.fillText('← → run    SPACE jump (x2)    ↓ / SHIFT slide', 30, H - 82);
-    ctx.fillText('R restart    G toggle ghost    L toggle latency', 30, H - 66);
+    ctx.fillText('R restart   G ghost   T inputs   Q rewind 2s', 30, H - 66);
+    ctx.fillText('1 full run    2 3 4 practice from a checkpoint', 30, H - 52);
     ctx.fillStyle = '#f87171';
     ctx.fillText('C teleport-hack    V speed-hack  — server reverts both', 30, H - 48);
     ctx.fillStyle = '#64748b';
@@ -446,6 +519,8 @@ R.Renderer = function (canvas) {
 
       drawProgressBar(g);
       drawHud(g);
+      drawPracticeHud(g);
+      if (g.showInputs) drawInputDisplay(g);
     }
   };
 };

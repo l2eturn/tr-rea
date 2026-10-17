@@ -107,6 +107,76 @@ R.RaceSession = function (track, channel, room) {
     counters: counters,
     rejections: rejections,
 
+    // --- state capture, for rewind and segment practice -----------------
+    // The server owns the race, so a rewind has to rewind the server. This
+    // returns everything needed to put it back exactly as it was.
+    captureState: function () {
+      return {
+        tick: state.tick,
+        phase: state.phase,
+        startTick: state.startTick,
+        racers: state.racers.map(R.Physics.clone),
+        counters: {
+          inputRejected: counters.inputRejected,
+          claimRejected: counters.claimRejected,
+          stepRejected: counters.stepRejected
+        }
+      };
+    },
+
+    restoreState: function (snap) {
+      state.tick = snap.tick;
+      state.phase = snap.phase;
+      state.startTick = snap.startTick;
+
+      for (var i = 0; i < state.racers.length; i++) {
+        if (snap.racers[i]) R.Physics.copyInto(state.racers[i], snap.racers[i]);
+      }
+
+      counters.inputRejected = snap.counters.inputRejected;
+      counters.claimRejected = snap.counters.claimRejected;
+      counters.stepRejected = snap.counters.stepRejected;
+
+      // Input bookkeeping is tick-stamped, so all of it is stale now.
+      history = {};
+      claimQueue = [];
+      lastInputTick[room.playerId] = snap.tick - 1;
+      pendingInput[room.playerId] = 0;
+    },
+
+    // Place every racer at a checkpoint and start the race there.
+    startAtCheckpoint: function (sector) {
+      var cpX = track.checkpointX(sector);
+      var groundY = track.groundBelow(cpX, 0, null);
+
+      for (var i = 0; i < state.racers.length; i++) {
+        var ch = state.racers[i];
+        ch.x = cpX - i * 26;
+        ch.y = groundY === null ? track.groundY : groundY;
+        ch.vx = 0;
+        ch.vy = 0;
+        ch.onGround = true;
+        ch.jumps = 0;
+        ch.prevJump = false;
+        ch.slideTicks = 0;
+        ch.slideLock = false;
+        ch.stun = 0;
+        ch.inv = 0;
+        ch.boost = 0;
+        ch.sector = sector;
+        ch.respawns = 0;
+        ch.finishTick = -1;
+        ch.picked = {};
+      }
+
+      state.phase = 'running';
+      state.startTick = state.tick;
+      history = {};
+      claimQueue = [];
+      lastInputTick[room.playerId] = state.tick - 1;
+      pendingInput[room.playerId] = 0;
+    },
+
     welcome: function (tick) {
       channel.sendToClient(R.Proto.welcome(room.playerId, state.startTick,
         state.racers.map(function (ch) {
@@ -147,7 +217,7 @@ R.RaceSession = function (track, channel, room) {
       if (state.phase === 'running' && state.allFinished()) state.phase = 'over';
 
       if (tick % R.C.SNAPSHOT_EVERY === 0) {
-        channel.sendToClient(R.Proto.snapshot(tick, state.phase,
+        channel.sendToClient(R.Proto.snapshot(tick, state.phase, state.startTick,
           state.racers.map(R.Proto.racerView)), tick);
       }
     }

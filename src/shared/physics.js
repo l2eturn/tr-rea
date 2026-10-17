@@ -39,6 +39,23 @@ R.Physics = (function () {
     return c;
   }
 
+  // Overwrite dst with src's simulation state, keeping dst's identity fields
+  // (name, colour, skill) and its object identity, because the race state and
+  // the renderer hold references to it.
+  function copyInto(dst, src) {
+    var FIELDS = ['x', 'y', 'vx', 'vy', 'onGround', 'jumps', 'prevJump',
+      'slideTicks', 'slideLock', 'stun', 'inv', 'boost', 'sector', 'respawns',
+      'finishTick'];
+    for (var i = 0; i < FIELDS.length; i++) {
+      dst[FIELDS[i]] = src[FIELDS[i]];
+    }
+    dst.picked = {};
+    for (var k in src.picked) {
+      if (Object.prototype.hasOwnProperty.call(src.picked, k)) dst.picked[k] = 1;
+    }
+    return dst;
+  }
+
   function height(ch) {
     return ch.slideTicks > 0 ? C.SLIDE_H : C.BODY_H;
   }
@@ -240,6 +257,7 @@ R.Physics = (function () {
   return {
     create: create,
     clone: clone,
+    copyInto: copyInto,
     step: step,
     height: height,
     box: box

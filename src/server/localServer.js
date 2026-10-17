@@ -21,6 +21,9 @@ R.LocalServer = function (track, opts) {
     room: room,
     session: session,
     tick: function (tick) { session.tick(tick); },
+    captureState: function () { return session.captureState(); },
+    restoreState: function (snap) { session.restoreState(snap); },
+    startAtCheckpoint: function (sector) { session.startAtCheckpoint(sector); },
     reset: function () {
       return R.LocalServer(track, opts);
     }

@@ -18,6 +18,12 @@ R.Ghost = function () {
       recording[frame] = [Math.round(x), Math.round(y)];
     },
 
+    // A rewind invalidates everything recorded after the restore point.
+    truncate: function (frame) {
+      if (frame < 0) { recording = []; return; }
+      recording.length = Math.min(recording.length, frame + 1);
+    },
+
     // Position of the saved ghost at this frame, or null when it has finished.
     at: function (frame) {
       if (!playback || frame < 0) return null;

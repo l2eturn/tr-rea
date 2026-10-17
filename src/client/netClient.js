@@ -50,6 +50,9 @@ R.NetClient = function (channel, track) {
   function onSnapshot(msg) {
     self.serverTick = msg.tick;
     self.phase = msg.phase;
+    if (typeof msg.startTick === 'number') {
+      self.startTick = msg.startTick;
+    }
 
     for (var i = 0; i < msg.racers.length; i++) {
       var view = msg.racers[i];
@@ -112,6 +115,20 @@ R.NetClient = function (channel, track) {
 
       R.Physics.step(self.local, input, track, tick);
       return input;
+    },
+
+    /**
+     * Drop all prediction and adopt an authoritative state directly. Used
+     * after a rewind, where every pending input belongs to a timeline that
+     * no longer exists.
+     */
+    adoptAuthoritative: function (racerState) {
+      self.pending = [];
+      self.racers = {};
+      self.prevRacers = {};
+      if (self.local && racerState) {
+        applyView(self.local, R.Proto.racerView(racerState));
+      }
     },
 
     // --- tampering demo -------------------------------------------------

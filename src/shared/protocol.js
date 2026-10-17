@@ -55,7 +55,13 @@ R.Proto = {
     };
   },
 
-  snapshot: function (tick, phase, racers) {
-    return { t: R.Proto.SNAPSHOT, tick: tick, phase: phase, racers: racers };
+  snapshot: function (tick, phase, startTick, racers) {
+    return {
+      t: R.Proto.SNAPSHOT,
+      tick: tick,
+      phase: phase,
+      startTick: startTick,
+      racers: racers
+    };
   }
 };

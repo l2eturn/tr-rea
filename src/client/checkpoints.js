@@ -8,6 +8,10 @@ R.Checkpoints = function (track) {
   return {
     reset: function () { lastSector = 0; },
 
+    // After a rewind or a segment start, the authoritative sector is the
+    // truth and this must follow it rather than re-firing old crossings.
+    setSector: function (sector) { lastSector = sector; },
+
     // Returns the list of sector indices crossed since the last call.
     poll: function (sector) {
       var events = [];

@@ -14,7 +14,8 @@ R.Input = (function () {
     ArrowDown: IN.SLIDE, KeyS: IN.SLIDE, ShiftLeft: IN.SLIDE, ShiftRight: IN.SLIDE
   };
 
-  var HOTKEYS = ['KeyR', 'KeyC', 'KeyV', 'KeyG', 'KeyL'];
+  var HOTKEYS = ['KeyR', 'KeyC', 'KeyV', 'KeyG', 'KeyL', 'KeyQ', 'KeyT',
+    'Digit1', 'Digit2', 'Digit3', 'Digit4'];
 
   function attach(target) {
     (target || window).addEventListener('keydown', function (e) {

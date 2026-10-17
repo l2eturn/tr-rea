@@ -10,7 +10,8 @@ R.TimeTrial = function () {
     best: null,
     bestSplits: [],
     isNewBest: false,
-    delta: null           // vs best, in ticks, at the last checkpoint
+    delta: null,          // vs best, in ticks, at the last checkpoint
+    isSegment: false      // segment runs never count as a best time
   };
 
   function fmt(ticks) {
@@ -36,7 +37,8 @@ R.TimeTrial = function () {
     fmt: fmt,
     fmtDelta: fmtDelta,
 
-    reset: function (saved) {
+    reset: function (saved, isSegment) {
+      state.isSegment = !!isSegment;
       state.frame = -1;
       state.splits = [];
       state.finishFrame = null;
@@ -58,8 +60,21 @@ R.TimeTrial = function () {
       state.delta = typeof ref === 'number' ? state.frame - ref : null;
     },
 
+    // A rewind undoes splits taken after the restore point.
+    truncateTo: function (sector) {
+      state.splits.length = Math.max(0, sector);
+      state.finishFrame = null;
+      state.isNewBest = false;
+      state.delta = null;
+    },
+
     onFinish: function () {
       if (state.finishFrame != null) return false;
+      // Segment runs and rewound runs are practice, not a clean lap.
+      if (state.isSegment) {
+        state.finishFrame = state.frame;
+        return false;
+      }
       state.finishFrame = state.frame;
       if (state.best == null || state.finishFrame < state.best) {
         state.isNewBest = true;

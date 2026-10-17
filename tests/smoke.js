@@ -17,7 +17,8 @@ const files = [
   'src/server/room.js',
   'src/server/lobby.js',
   'src/server/localServer.js',
-  'src/client/netClient.js'
+  'src/client/netClient.js',
+  'src/client/practice.js'
 ];
 
 const sandbox = { console };
@@ -105,6 +106,117 @@ console.log('server says     x :', Math.round(auth.x));
 console.log('claim rejections  :', server.session.counters.claimRejected);
 console.log('snapped back      :', Math.abs(net.state.local.x - auth.x) < 2);
 
+// ---------------------------------------------------------------------------
+// Rewind determinism: replaying the same inputs after a rewind must land on
+// byte-identical state. If it does not, practice is useless.
+// ---------------------------------------------------------------------------
+function stateFingerprint(session) {
+  return JSON.stringify(session.state.racers.map(r => ({
+    id: r.id,
+    x: +r.x.toFixed(6), y: +r.y.toFixed(6),
+    vx: +r.vx.toFixed(6), vy: +r.vy.toFixed(6),
+    onGround: r.onGround, jumps: r.jumps, prevJump: r.prevJump,
+    slideTicks: r.slideTicks, slideLock: r.slideLock,
+    stun: r.stun, inv: r.inv, boost: +r.boost.toFixed(6),
+    sector: r.sector, respawns: r.respawns, finishTick: r.finishTick,
+    picked: Object.keys(r.picked).sort()
+  }))) + '|' + JSON.stringify(session.counters);
+}
+
+function rewindCheck() {
+  const RUN_TO = 420;
+  const server = R.LocalServer(track, { latencyTicks: 0 });
+  const net = R.NetClient(server.channel, track);
+  const practice = R.Practice();
+  const inputs = [];
+
+  for (let tick = 0; tick < RUN_TO; tick++) {
+    net.pumpDown(tick);
+    const input = net.state.local
+      ? R.AiRacers.inputFor(net.state.local, track, tick, 1)
+      : 0;
+    inputs[tick] = input;
+    net.sendAndPredict(tick, input);
+    server.tick(tick);
+    practice.record(tick, server.session, input);
+  }
+
+  const original = stateFingerprint(server.session);
+
+  const snap = practice.rewind(2, server.session);
+  if (!snap) return { ok: false, reason: 'no snapshot available' };
+
+  const you = server.session.state.get(server.room.playerId);
+  net.adoptAuthoritative(you);
+
+  const rewoundTo = snap.tick;
+
+  // Replay the exact same inputs over the rewound stretch.
+  for (let tick = rewoundTo + 1; tick < RUN_TO; tick++) {
+    net.pumpDown(tick);
+    net.sendAndPredict(tick, inputs[tick]);
+    server.tick(tick);
+    practice.record(tick, server.session, inputs[tick]);
+  }
+
+  const replayed = stateFingerprint(server.session);
+
+  return {
+    ok: original === replayed,
+    rewoundTo,
+    ticksReplayed: RUN_TO - 1 - rewoundTo,
+    original,
+    replayed
+  };
+}
+
+function segmentCheck() {
+  const server = R.LocalServer(track, { latencyTicks: 0 });
+  const net = R.NetClient(server.channel, track);
+  net.pumpDown(0);
+  server.startAtCheckpoint(2);
+
+  const you = server.session.state.get(server.room.playerId);
+  net.adoptAuthoritative(you);
+  const expectedX = track.checkpointX(2);
+
+  // Simulate a short stretch to be sure it runs from there.
+  for (let tick = 0; tick < 120; tick++) {
+    net.pumpDown(tick);
+    const input = net.state.local
+      ? R.AiRacers.inputFor(net.state.local, track, tick, 1)
+      : 0;
+    net.sendAndPredict(tick, input);
+    server.tick(tick);
+  }
+
+  return {
+    ok: you.sector === 2
+      && Math.abs(expectedX - track.checkpointX(2)) < 1
+      && you.x > expectedX
+      && server.session.counters.stepRejected === 0
+      && server.session.counters.claimRejected === 0,
+    sector: you.sector,
+    startedAt: Math.round(expectedX),
+    nowAt: Math.round(you.x),
+    counters: server.session.counters
+  };
+}
+
+const rew = rewindCheck();
+console.log('\n=== rewind determinism ===');
+console.log('rewound to tick :', rew.rewoundTo, '(replayed', rew.ticksReplayed, 'ticks)');
+console.log('identical state :', rew.ok);
+if (!rew.ok && rew.original) {
+  console.log(' original:', String(rew.original).slice(0, 260));
+  console.log(' replayed:', String(rew.replayed).slice(0, 260));
+}
+
+const seg = segmentCheck();
+console.log('\n=== segment practice ===');
+console.log('started at CP2 x:', seg.startedAt, '-> now x:', seg.nowAt, 'sector:', seg.sector);
+console.log('validation      :', JSON.stringify(seg.counters));
+
 const checks = [
   ['player finishes at latency 0', a.finished],
   ['player finishes at latency 10', b.finished],
@@ -117,7 +229,9 @@ const checks = [
   ['no bogus step refusals (lat 10)', b.counters.stepRejected === 0],
   ['bots can complete the track', a.botsFinished === 3],
   ['tampering is detected', server.session.counters.claimRejected > 0],
-  ['tampering is reverted', Math.abs(net.state.local.x - auth.x) < 2]
+  ['tampering is reverted', Math.abs(net.state.local.x - auth.x) < 2],
+  ['rewind replays deterministically', rew.ok],
+  ['segment practice starts at the checkpoint', seg.ok]
 ];
 
 console.log('');
